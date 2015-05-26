@@ -67,7 +67,7 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s:Double, kernel : Strin
         val N = data.count(x => true)
         println(N_c)
         println(N)
-        (N_c / N)
+        (N_c.toDouble / N)
 
     }
 }
