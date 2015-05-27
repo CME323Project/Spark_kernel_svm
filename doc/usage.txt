@@ -6,4 +6,4 @@ Run:
 First cd into .../Spark_kernel_svm then:
 $ (your spark dir)/bin/spark-submit \
 --packages amplab:spark-indexedrdd:0.1 \
-target/scala-2.10/simple-project_2.10-1.0.jar 
+target/scala-2.10/spark-kernel-svm_2.10-1.0.jar

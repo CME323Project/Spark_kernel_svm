@@ -1,4 +1,4 @@
-name := "Simple Project"
+name := "Spark Kernel SVM"
 
 version := "1.0"
 
