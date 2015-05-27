@@ -1,21 +1,7 @@
-import org.apache.spark.SparkContext
-import org.apache.spark.SparkContext._
-import org.apache.spark.SparkConf
 import org.apache.spark.rdd._
 
 import org.apache.spark.mllib.regression.LabeledPoint
-import org.apache.spark.mllib.linalg.DenseVector
-import org.apache.spark.mllib.linalg.Vector
-import org.apache.spark.mllib.linalg.Vectors
-import org.apache.spark.mllib.util.MLUtils
 import edu.berkeley.cs.amplab.spark.indexedrdd.IndexedRDD
-
-class RbfKernelFunc(gamma_s: Double) extends java.io.Serializable{
-    var gamma: Double = gamma_s
-    def evaluate(x_1: Vector, x_2: Vector): Double = {
-        math.exp(-1 * gamma * math.pow(Vectors.sqdist(x_1, x_2),2))
-    }
-}
 
 class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : String = "rbf", gamma: Double = 1D) extends java.io.Serializable{
     var lambda = lambda_s
@@ -69,25 +55,3 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
 
     }
 }
-object SimpleApp {
-    def main(args: Array[String]) {
-        val logFile = "README.md" // Should be some file on your system
-        val conf = new SparkConf().setAppName("Simple Application")
-        val sc = new SparkContext(conf)
-
-        val data =  MLUtils.loadLibSVMFile(sc, "data/a8a.txt")
-        val data_train = data.sample(false, 0.1)
-
-        val svm = new KernelSVM(data_train, 1.0, "rbf", 1.0)
-        svm.train(20)
-
-
-        //val test = MLUtils.loadLibSVMFile(sc, "data/a8at.txt")
-        val local_test = data.takeSample(false, 1000)
-        println(svm.getAccuracy(local_test))
-
-    }
-}
-
-
-
