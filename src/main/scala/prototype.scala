@@ -24,33 +24,60 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
     var data = training_data
     var s = 1D
 
-    def train(num_iter: Long, pack_size: Long = 1) {
+    /** Packing algorithm **/
+    def train(num_iter: Long, pack_size: Int = 1) {
         /** Initialization */
         var working_data = IndexedRDD(data.zipWithUniqueId().map{case (k,v) => (v,(k, 0D))})
         var norm = 0D
-        var yp = 0D
-        var y = 0D
+        //var yp = 0D
+        //var y = 0D
         var alpha = 0D
         var t = 1
+        var i = 0
+        var j = 0
 
         /** Training the model with pack updating */
         while (t <= num_iter) {
-            var sample = (working_data.takeSample(true, 1))(0)
-            y = sample._2._1.label
-            yp = working_data.map{case (k,v) => (v._1.label * v._2 * kernel_func.evaluate(v._1.features, sample._2._1.features))}.reduce((a, b) => a + b)
-            s = (1 - 1D/(t+1))*s
-            if (y * yp < 1) {
-                norm = norm + (2*y) / (lambda * t) * yp + math.pow((y/(lambda*t)), 2)*kernel_func.evaluate(sample._2._1.features, sample._2._1.features)
-                alpha = working_data.get(sample._1).get._2
-                working_data = working_data.put(sample._1, (sample._2._1, alpha + (1/(lambda*t*s)))).cache()
-                
-                if (norm > (1/lambda)) {
-                    s = s * (1/math.sqrt(lambda*norm))
-                    norm = (1/lambda)
-                }
 
+            var sample = working_data.takeSample(true, pack_size)
+            var yp = sample.map(x => (working_data.map{case (k,v) => (v._1.label * v._2 * kernel_func.evaluate(v._1.features, x._2._1.features))}.reduce((a, b) => a + b)))
+            var y = sample.map(x => x._2._1.label)
+            var local_set = Map[Long, (LabeledPoint, Double)]()
+            var inner_prod = Map[(Int, Int), Double]()
+
+            /** Compute kernel inner product pairs*/
+            for (i <- 0 until pack_size) {
+                for (j <- i until pack_size) {
+                    inner_prod = inner_prod + ((i, j) -> kernel_func.evaluate(sample(i)._2._1.features, sample(j)._2._1.features))
+                }
             }
-            t = t+1
+
+            for (i <- 0 until pack_size) {
+                t = t+1
+                s = (1 - 1D/(t))*s
+                for (j <- (i+1) until (pack_size)) {
+                    yp(j) = (1 - 1D/(t))*yp(j)
+                }
+                if (y(i) * yp(i) < 1) {
+                    norm = norm + (2*y(i)) / (lambda * t) * yp(i) + math.pow((y(i)/(lambda*t)), 2)*inner_prod((i,i))
+                    alpha = working_data.get(sample(i)._1).get._2
+                    local_set = local_set + (sample(i)._1 -> (sample(i)._2._1, alpha + (1/(lambda*t*s))))
+
+                    for (j <- (i+1) to (pack_size-1)) {
+                        yp(j) = yp(j) + y(j)/(lambda*t) * inner_prod((i,j))
+                    }
+
+                    if (norm > (1/lambda)) {
+                        s = s * (1/math.sqrt(lambda*norm))
+                        norm = (1/lambda)
+                        for (j <- (i+1) to (pack_size-1)) {
+                            yp(j) = yp(j) /math.sqrt(lambda*norm)
+                        }
+                    }
+
+                }
+            }
+            working_data = working_data.multiput(local_set).cache()
         }
         model = working_data.map{case (k, v) => (v._1, v._2)}.filter{case (k,v) => (v > 0)}
         print (model.count())
@@ -79,7 +106,7 @@ object SimpleApp {
         val data_train = data.sample(false, 0.1)
 
         val svm = new KernelSVM(data_train, 1.0, "rbf", 1.0)
-        svm.train(20)
+        svm.train(1000,10)
 
 
         //val test = MLUtils.loadLibSVMFile(sc, "data/a8at.txt")
