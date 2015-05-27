@@ -17,20 +17,23 @@ class RbfKernelFunc(gamma_s: Double) extends java.io.Serializable{
     }
 }
 
-class KernelSVM(training_data:RDD[LabeledPoint], lambda_s:Double, kernel : String, gamma: Double) extends java.io.Serializable{
+class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : String = "rbf", gamma: Double = 1D) extends java.io.Serializable{
     var lambda = lambda_s
     var kernel_func = new RbfKernelFunc(gamma)
     var model = training_data.map(x => (x, 0D))
     var data = training_data
     var s = 1D
 
-    def train(num_iter: Long) {
+    def train(num_iter: Long, pack_size: Long = 1) {
+        /** Initialization */
         var working_data = IndexedRDD(data.zipWithUniqueId().map{case (k,v) => (v,(k, 0D))})
         var norm = 0D
         var yp = 0D
         var y = 0D
         var alpha = 0D
         var t = 1
+
+        /** Training the model with pack updating */
         while (t <= num_iter) {
             var sample = (working_data.takeSample(true, 1))(0)
             y = sample._2._1.label
