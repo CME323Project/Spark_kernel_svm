@@ -80,12 +80,14 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
             working_data = working_data.multiput(local_set).cache()
         }
         model = working_data.map{case (k, v) => (v._1, v._2)}.filter{case (k,v) => (v > 0)}
-        print (model.count())
-
 
     }
 
-    val predict = (data: LabeledPoint) => {
+    def getNumSupportVectors(): Long = {
+        model.count()
+    }
+
+    def predict (data: LabeledPoint): Double = {
         s * (model.map{case (k,v) => v * k.label * kernel_func.evaluate(data.features, k.features)}.reduce((a, b) => a + b))
 
     }
@@ -95,6 +97,7 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
         (N_c.toDouble / N)
 
     }
+
 }
 object SimpleApp {
     def main(args: Array[String]) {
@@ -103,7 +106,7 @@ object SimpleApp {
         val sc = new SparkContext(conf)
 
         val data =  MLUtils.loadLibSVMFile(sc, "data/a8a.txt")
-        val data_train = data.sample(false, 0.1)
+        val data_train = data.sample(false, 0.8)
 
         val svm = new KernelSVM(data_train, 1.0, "rbf", 1.0)
         svm.train(1000,10)
@@ -112,6 +115,7 @@ object SimpleApp {
         //val test = MLUtils.loadLibSVMFile(sc, "data/a8at.txt")
         val local_test = data.takeSample(false, 1000)
         println(svm.getAccuracy(local_test))
+        println(svm.getNumSupportVectors())
 
     }
 }
