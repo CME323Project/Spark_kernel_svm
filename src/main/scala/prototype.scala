@@ -10,23 +10,21 @@ import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.util.MLUtils
 import edu.berkeley.cs.amplab.spark.indexedrdd.IndexedRDD
 
-class RbfKernelFunc(sigma_s: Double) extends java.io.Serializable{
-    var sigma: Double = sigma_s
+class RbfKernelFunc(gamma_s: Double) extends java.io.Serializable{
+    var gamma: Double = gamma_s
     def evaluate(x_1: Vector, x_2: Vector): Double = {
-        math.exp(-1 * math.pow(Vectors.sqdist(x_1, x_2),2)/(2 * sigma * sigma))
+        math.exp(-1 * gamma * math.pow(Vectors.sqdist(x_1, x_2),2))
     }
 }
 
-class KernelSVM(training_data:RDD[LabeledPoint], lambda_s:Double, kernel : String, kernel_param: Double, num_iter: Long) extends java.io.Serializable{
-    //var sc = sparkContext
+class KernelSVM(training_data:RDD[LabeledPoint], lambda_s:Double, kernel : String, gamma: Double) extends java.io.Serializable{
     var lambda = lambda_s
-    var kernel_func = new RbfKernelFunc(kernel_param)
-    //Initialize model as a RDD[(LabeledPoint, Double)]
+    var kernel_func = new RbfKernelFunc(gamma)
     var model = training_data.map(x => (x, 0D))
     var data = training_data
     var s = 1D
 
-    def train() {
+    def train(num_iter: Long) {
         var working_data = IndexedRDD(data.zipWithUniqueId().map{case (k,v) => (v,(k, 0D))})
         var norm = 0D
         var yp = 0D
@@ -41,7 +39,7 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s:Double, kernel : Strin
             if (y * yp < 1) {
                 norm = norm + (2*y) / (lambda * t) * yp + math.pow((y/(lambda*t)), 2)*kernel_func.evaluate(sample._2._1.features, sample._2._1.features)
                 alpha = working_data.get(sample._1).get._2
-                working_data = working_data.put(sample._1, (sample._2._1, alpha + (1/(lambda*t*s))))
+                working_data = working_data.put(sample._1, (sample._2._1, alpha + (1/(lambda*t*s)))).cache()
                 
                 if (norm > (1/lambda)) {
                     s = s * (1/math.sqrt(lambda*norm))
@@ -53,7 +51,6 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s:Double, kernel : Strin
         }
         model = working_data.map{case (k, v) => (v._1, v._2)}.filter{case (k,v) => (v > 0)}
         print (model.count())
-        println("fuck")
 
 
     }
@@ -65,8 +62,6 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s:Double, kernel : Strin
     def getAccuracy(data: Array[LabeledPoint]): Double = {
         val N_c = data.map(x => (predict(x) * x.label) ).count(x => x>0)
         val N = data.count(x => true)
-        println(N_c)
-        println(N)
         (N_c.toDouble / N)
 
     }
@@ -80,8 +75,8 @@ object SimpleApp {
         val data =  MLUtils.loadLibSVMFile(sc, "data/a8a.txt")
         val data_train = data.sample(false, 0.1)
 
-        val svm = new KernelSVM(data_train, 1.0, "rbf", 1.0, 100)
-        svm.train()
+        val svm = new KernelSVM(data_train, 1.0, "rbf", 1.0)
+        svm.train(20)
 
 
         //val test = MLUtils.loadLibSVMFile(sc, "data/a8at.txt")
