@@ -1,3 +1,14 @@
+/* 
+ * Kernel SVM: the class for kernelized SVM on Spark
+ * Using SGD
+ * Usage example: 
+    //data = some rdd of LabeledPoint
+    //setup amodel by regietering training data, specifying lambda, 
+    //specifying kernel and kernel parameters
+    val model = new KernelSVM(data_train, 1.0, "rbf", 1.0)
+    //train the model by specifying # of iterations and packing size
+    model.train(1000,10)
+ */
 import org.apache.spark.rdd._
 
 import org.apache.spark.mllib.regression.LabeledPoint
@@ -76,6 +87,7 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
         s * (model.map{case (k,v) => v * k.label * kernel_func.evaluate(data.features, k.features)}.reduce((a, b) => a + b))
 
     }
+    
     def getAccuracy(data: Array[LabeledPoint]): Double = {
         val N_c = data.map(x => (predict(x) * x.label) ).count(x => x>0)
         val N = data.count(x => true)
