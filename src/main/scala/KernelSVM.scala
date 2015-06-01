@@ -56,7 +56,7 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
                 }
                 if (y(i) * yp(i) < 1) {
                     norm = norm + (2*y(i)) / (lambda * t) * yp(i) + math.pow((y(i)/(lambda*t)), 2)*inner_prod((i,i))
-                    alpha = working_data.get(sample(i)._1).get._2
+                    alpha = sample(i)._2._2
                     local_set = local_set + (sample(i)._1 -> (sample(i)._2._1, alpha + (1/(lambda*t*s))))
 
                     for (j <- (i+1) to (pack_size-1)) {
@@ -73,8 +73,10 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
 
                 }
             }
+            //batch update model
             working_data = working_data.multiput(local_set).cache()
         }
+        //keep the effective part of the model
         model = working_data.map{case (k, v) => (v._1, v._2)}.filter{case (k,v) => (v > 0)}
 
     }
