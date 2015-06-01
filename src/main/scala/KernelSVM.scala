@@ -15,12 +15,14 @@ import org.apache.spark.mllib.regression.LabeledPoint
 import edu.berkeley.cs.amplab.spark.indexedrdd.IndexedRDD
 
 
-class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : String = "rbf", gamma: Double = 1D) extends java.io.Serializable{
+class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : String = "rbf", gamma: Double = 1D, checkpoint_dir: String = "../checkpoint") extends java.io.Serializable{
     var lambda = lambda_s
     var kernel_func = new RbfKernelFunc(gamma)
     var model = training_data.map(x => (x, 0D))
     var data = training_data
     var s = 1D
+
+    data.sparkContext.setCheckpointDir(checkpoint_dir)
 
     /** Packing algorithm **/
     def train(num_iter: Long, pack_size: Int = 1) {
@@ -31,6 +33,7 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
         var t = 1
         var i = 0
         var j = 0
+        var num_of_updates = 0
 
         /** Training the model with pack updating */
         while (t <= num_iter) {
@@ -75,6 +78,11 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
             }
             //batch update model
             working_data = working_data.multiput(local_set).cache()
+            num_of_updates = num_of_updates + 1
+            //checkpoint
+            if (num_of_updates % 100 == 0 ) {
+                working_data.checkpoint()
+            }
         }
         //keep the effective part of the model
         model = working_data.map{case (k, v) => (v._1, v._2)}.filter{case (k,v) => (v > 0)}
@@ -95,6 +103,14 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
         val N = data.count(x => true)
         (N_c.toDouble / N)
 
+    }
+
+    def registerData(new_training_data:RDD[LabeledPoint]) {
+        data = new_training_data
+    }
+
+    def setLambda(new_lambda: Double) {
+        lambda = new_lambda
     }
 
 }
