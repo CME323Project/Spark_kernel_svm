@@ -10,6 +10,7 @@
     model.train(1000,10)
  */
 import org.apache.spark.rdd._
+import Array._
 
 import org.apache.spark.mllib.regression.LabeledPoint
 import edu.berkeley.cs.amplab.spark.indexedrdd.IndexedRDD
@@ -35,6 +36,9 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
         var j = 0
         var num_of_updates = 0
 
+        val pair_idx = data.sparkContext.parallelize(range(0, pack_size).flatMap(x => (range(x, pack_size).map(y => (x,y)))))
+
+
         /** Training the model with pack updating */
         while (t <= num_iter) {
 
@@ -42,14 +46,17 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
             var yp = sample.map(x => (working_data.map{case (k,v) => (v._1.label * v._2 * kernel_func.evaluate(v._1.features, x._2._1.features))}.reduce((a, b) => a + b)))
             var y = sample.map(x => x._2._1.label)
             var local_set = Map[Long, (LabeledPoint, Double)]()
-            var inner_prod = Map[(Int, Int), Double]()
+            //var inner_prod = Map[(Int, Int), Double]()
 
             /** Compute kernel inner product pairs*/
+            /*
             for (i <- 0 until pack_size) {
                 for (j <- i until pack_size) {
                     inner_prod = inner_prod + ((i, j) -> kernel_func.evaluate(sample(i)._2._1.features, sample(j)._2._1.features))
                 }
             }
+            */
+            var inner_prod = pair_idx.map(x => (x, kernel_func.evaluate(sample(x._1)._2._1.features, sample(x._2)._2._1.features))).collectAsMap()
 
             for (i <- 0 until pack_size) {
                 t = t+1
