@@ -37,26 +37,19 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
         var num_of_updates = 0
 
         val pair_idx = data.sparkContext.parallelize(range(0, pack_size).flatMap(x => (range(x, pack_size).map(y => (x,y)))))
-
+        val broad_kernel_func = data.sparkContext.broadcast(kernel_func)
 
         /** Training the model with pack updating */
         while (t <= num_iter) {
 
             var sample = working_data.takeSample(true, pack_size)
-            var yp = sample.map(x => (working_data.map{case (k,v) => (v._1.label * v._2 * kernel_func.evaluate(v._1.features, x._2._1.features))}.reduce((a, b) => a + b)))
+            var broad_sample = data.sparkContext.broadcast(sample)
+            var yp = broad_sample.value.map(x => (working_data.map{case (k,v) => (v._1.label * v._2 * broad_kernel_func.value.evaluate(v._1.features, x._2._1.features))}.reduce((a, b) => a + b)))
             var y = sample.map(x => x._2._1.label)
             var local_set = Map[Long, (LabeledPoint, Double)]()
-            //var inner_prod = Map[(Int, Int), Double]()
 
             /** Compute kernel inner product pairs*/
-            /*
-            for (i <- 0 until pack_size) {
-                for (j <- i until pack_size) {
-                    inner_prod = inner_prod + ((i, j) -> kernel_func.evaluate(sample(i)._2._1.features, sample(j)._2._1.features))
-                }
-            }
-            */
-            var inner_prod = pair_idx.map(x => (x, kernel_func.evaluate(sample(x._1)._2._1.features, sample(x._2)._2._1.features))).collectAsMap()
+            var inner_prod = pair_idx.map(x => (x, broad_kernel_func.value.evaluate(sample(x._1)._2._1.features, sample(x._2)._2._1.features))).collectAsMap()
 
             for (i <- 0 until pack_size) {
                 t = t+1
@@ -84,7 +77,9 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
                 }
             }
             //batch update model
+            var to_forget = working_data
             working_data = working_data.multiput(local_set).cache()
+            to_forget.unpersist()
             num_of_updates = num_of_updates + 1
             //checkpoint
             if (num_of_updates % 100 == 0 ) {
@@ -92,6 +87,7 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
             }
         }
         //keep the effective part of the model
+
         model = working_data.map{case (k, v) => (v._1, v._2)}.filter{case (k,v) => (v > 0)}
 
     }
