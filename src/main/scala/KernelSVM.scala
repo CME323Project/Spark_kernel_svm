@@ -17,17 +17,22 @@ import edu.berkeley.cs.amplab.spark.indexedrdd.IndexedRDD
 
 
 class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : String = "rbf", gamma: Double = 1D, checkpoint_dir: String = "../checkpoint") extends java.io.Serializable{
+    /** Initialization */
     var lambda = lambda_s
+    //Currently only rbf kernel is implemented
     var kernel_func = new RbfKernelFunc(gamma)
     var model = training_data.map(x => (x, 0D))
     var data = training_data
     var s = 1D
-
+    //specify the checkpoint directory
     data.sparkContext.setCheckpointDir(checkpoint_dir)
 
-    /** Packing algorithm **/
+    /** method train, based on P-Pack algorithm **/
     def train(num_iter: Long, pack_size: Int = 1) {
-        /** Initialization */
+        //Free the current model from memory
+        model.unpersist()
+
+        //Initialization
         var working_data = IndexedRDD(data.zipWithUniqueId().map{case (k,v) => (v,(k, 0D))})
         var norm = 0D
         var alpha = 0D
@@ -39,7 +44,7 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
         val pair_idx = data.sparkContext.parallelize(range(0, pack_size).flatMap(x => (range(x, pack_size).map(y => (x,y)))))
         val broad_kernel_func = data.sparkContext.broadcast(kernel_func)
 
-        /** Training the model with pack updating */
+        // Training the model with pack updating 
         while (t <= num_iter) {
 
             var sample = working_data.takeSample(true, pack_size)
@@ -48,9 +53,10 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
             var y = sample.map(x => x._2._1.label)
             var local_set = Map[Long, (LabeledPoint, Double)]()
 
-            /** Compute kernel inner product pairs*/
+            // Compute kernel inner product pairs
             var inner_prod = pair_idx.map(x => (x, broad_kernel_func.value.evaluate(sample(x._1)._2._1.features, sample(x._2)._2._1.features))).collectAsMap()
 
+            // Compute sub gradients
             for (i <- 0 until pack_size) {
                 t = t+1
                 s = (1 - 1D/(t))*s
@@ -81,26 +87,31 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
             working_data = working_data.multiput(local_set).cache()
             to_forget.unpersist()
             num_of_updates = num_of_updates + 1
+
             //checkpoint
             if (num_of_updates % 100 == 0 ) {
                 working_data.checkpoint()
             }
         }
-        //keep the effective part of the model
 
-        model = working_data.map{case (k, v) => (v._1, v._2)}.filter{case (k,v) => (v > 0)}
+        //keep the effective part of the model
+        model = working_data.map{case (k, v) => (v._1, v._2)}.filter{case (k,v) => (v > 0)}.cache()
+        working_data.unpersist()
 
     }
 
+    /** getting the number of support vectors of the trained model */
     def getNumSupportVectors(): Long = {
         model.count()
     }
 
+    /** make a prediction on a single data point */
     def predict (data: LabeledPoint): Double = {
         s * (model.map{case (k,v) => v * k.label * kernel_func.evaluate(data.features, k.features)}.reduce((a, b) => a + b))
 
     }
     
+    /** Evaluate the accuracy given the test set as a local array */
     def getAccuracy(data: Array[LabeledPoint]): Double = {
         val N_c = data.map(x => (predict(x) * x.label) ).count(x => x>0)
         val N = data.count(x => true)
@@ -108,10 +119,12 @@ class KernelSVM(training_data:RDD[LabeledPoint], lambda_s: Double, kernel : Stri
 
     }
 
+    /** register a new training data */
     def registerData(new_training_data:RDD[LabeledPoint]) {
         data = new_training_data
     }
 
+    /** reset the regularization lambda */
     def setLambda(new_lambda: Double) {
         lambda = new_lambda
     }
